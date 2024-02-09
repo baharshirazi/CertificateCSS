@@ -1,0 +1,975 @@
+'use strict';
+
+var interestsApp;
+
+var searchTimeOut;
+var oldTerm = null;
+var searchApp = new Vue({
+    el: '#searchApp',
+    data: {
+        show: false,
+        term: '',
+        classNames: '',
+        result : null,
+        tab: '',
+        loading : false,
+        height: 0
+    },
+    methods: {
+        focused() {
+            this.show = true;
+            this.classNames = 'focused';
+            document.documentElement.style.overflow = "hidden";
+
+            this.$nextTick(() => {
+                this.$refs["search-input"].focus();
+                this.height = searchResultHeightResolver();
+            });
+        },
+        setHeight() {
+            return this.height;
+        },
+        redirect(link) {
+            document.location = link;
+        },
+        blured() {
+            this.classNames = '';
+            this.term = '';
+            this.show = false;
+            this.result = null;
+            document.documentElement.style.overflow = "auto";
+            oldTerm = null;
+        },
+        setTab(input) {
+            this.tab = input;
+        },
+        isEmpty() {
+            if (!this.result) {
+                return null;
+            }
+
+            return this.result.articles.length === 0
+                && this.result.news.length === 0
+                && this.result.lessons.length === 0
+                && this.result.departments.length === 0
+                && this.result.pages.length === 0;
+        },
+        count() {
+            return this.result.articles.length
+            + this.result.news.length
+            + this.result.lessons.length
+            + this.result.departments.length
+            + this.result.pages.length;
+        },
+        search() {
+            if(this.term.length < 2) {
+                return;
+            }
+
+            if(oldTerm === this.term) {
+                return;
+            }
+
+            oldTerm = this.term;
+
+            clearTimeout(searchTimeOut);
+            searchTimeOut = setTimeout(() => {
+                this.loading = true;
+
+                var formData = new FormData();
+                formData.append('term', this.term);
+
+                var requestOptions = {
+                    method: 'POST',
+                    body: formData
+                };
+
+                fetch(`${domainRoot}/default/search`, requestOptions)
+                    .then(async response => {
+                        this.result = await response.json();
+
+                        this.loading = false;
+                    })
+                    .catch(error => {
+                        console.log(error);
+                        notifyUser('خطا در ارتباط با سرور');                        
+                        this.loading = false;
+                    });
+            }, 500);
+        },
+        clear() {
+            if (this.isEmpty() === true) {
+                this.$refs["search-empty"].classList.toggle('clearing');
+                this.$refs["search-term"].classList.toggle('clearing');
+                setTimeout(() => {
+                    this.term = '';
+                    this.result = null;
+                    this.$refs["search-empty"].classList.remove('clearing');
+                    this.$refs["search-term"].classList.remove('clearing');
+                }, 200);
+            } else {
+                this.term = '';
+                this.result = null;
+            }
+
+            oldTerm = null;
+        }
+    }
+});
+
+var profilePage = '';
+var profileNav;
+profileNav = Vue.component('nav-elem', {
+    props: ['name', 'email', 'avatar'],
+    computed: {
+        page : function() {
+            return profilePage;
+        }
+    },
+    methods: {
+        change: function (page) {
+            profilePage = page;
+            this.$parent.$parent.change(page);
+        }
+    },
+    template: `
+    <div class="navigation">
+        <div class="avatar">
+            <img v-bind:src="avatar" />
+            <button><span class="flaticon-upload"></span></button>
+        </div>
+        <div class="info">
+            <div>{{name}}</div>
+            <div class="caption">{{email}}</div>
+        </div>
+        <div class="nav">
+            <a @click="change('')" v-bind:class="{active: page == ''}">
+                <span class="flaticon-user-1"></span>
+                حساب کاربری
+            </a>
+            <a @click="change('conversations')" v-bind:class="{active: page == 'conversations'}">
+                <span class="flaticon-email"></span>
+                مدیریت پیام ها
+                <span class="notify">3</span>
+            </a>
+            <a @click="change('courses')" v-bind:class="{active: page == 'courses'}">
+                <span class="flaticon-open-book"></span>
+                دوره های من
+            </a>
+            <a href="#">
+                <span class="flaticon-on-off-button"></span>
+                خروج از حساب کاربری
+            </a>
+        </div>
+    </div>`
+});
+
+var root = $("#root").val();
+function getCources2(skip = 0, pSkip = 0) {
+    filterCourseApp2.loading = true;
+    filterCourseApp2.showLoadMore = false;
+
+    var data = {
+        term: $("[data-filter-input]").val(),
+        department: [],
+        group: [],
+        course: [],
+        place: [],
+        month: [],
+        sort: "",
+        skip: skip,
+        pSkip: pSkip
+    };
+
+    var getId = function(source){
+        var result = [];
+
+        if(source == null) {
+            return result;
+        }
+
+        if(source.length === 0) {
+            return result;
+        }
+
+        source.forEach(item => {
+            var newItemId = item['id']['$id'];
+            if(!newItemId) {
+                newItemId = item['id'];
+            }
+            result.push(newItemId);
+        });
+
+        return result;
+    };
+    var temp1 = filterCourseApp2.departmentsItems.filter(obj => {
+        return obj.selected
+    });
+    data.department = getId(temp1);
+
+    var temp2 = filterCourseApp2.groupItems.filter(obj => {
+        return obj.selected
+    });
+    data.group = getId(temp2);
+
+    var temp3 = filterCourseApp2.courseItems.filter(obj => {
+        return obj.selected
+    });
+    data.course = getId(temp3);
+
+    var temp4 = filterCourseApp2.centerItems.filter(obj => {
+        return obj.selected
+    });
+    data.place = getId(temp4);
+
+    var temp5 = filterCourseApp2.monthItems.filter(obj => {
+        return obj.selected
+    });
+    data.month = getId(temp5);
+
+    var temp6 = filterCourseApp2.calendarItemType.filter(obj => {
+        return obj.selected
+    });
+    if(temp6.length > 0) {
+        data.type = getId(temp6)[0];
+    }
+
+    return $.post(`${root}/ajax/default/calendar?need=search`, data)
+    .done(function(result){
+        result = JSON.parse(result);
+
+        if(skip === 0 && pSkip === 0) {
+            filterCourseApp2.items = result;
+        } else {
+            result.forEach(element => {
+                filterCourseApp2.items.push(element);
+            });
+        }        
+
+        filterCourseApp2.loading = false;
+        if (result.length === 0) {
+            filterCourseApp2.showLoadMore = false;
+        } else {
+            filterCourseApp2.showLoadMore = true;
+        }
+
+        filterCourseApp2.init = true;
+    });
+}
+
+
+function getCources(term, args) {
+    filterCourseApp.loading = true;
+    filterCourseApp.showLoadMore = false;
+
+    if(!args) {
+        args = [];
+        args.skip = 0;
+    }
+    var data = {
+        term: $("[data-filter-input]").val(),
+        department: [],
+        group: [],
+        course: [],
+        place: $("#placeIdFromServer").val(),
+        month: "",
+        sort: "",
+        skip: args.skip
+    };
+
+    var fe = $("#filterCourseDepId");
+    if(fe && fe.length > 0) {
+        data['place[]'] = fe.val();
+    }
+    
+    var getId = function (source) {
+        var result = [];
+
+        if (source == null) {
+            return result;
+        }
+
+        if (source.length === 0) {
+            return result;
+        }
+
+        source.forEach(item => {
+            result.push(item['id']['$id']);
+        });
+
+        return result;
+    };
+
+    var temp1 = filterCourseApp.departmentsItems.filter(obj => {
+        return obj.selected
+    });
+    data.department = getId(temp1);
+
+    var temp2 = filterCourseApp.groupItems.filter(obj => {
+        return obj.selected
+    });
+    data.group = getId(temp2);
+
+    var temp3 = filterCourseApp.courseItems.filter(obj => {
+        return obj.selected
+    });
+    data.course = getId(temp3);
+
+    return $.post(`${root}/ajax/default/calendar?need=searchacademy`, data)
+        .done(function (result) {
+            result = JSON.parse(result);
+
+            if (args.skip === 0) {
+                filterCourseApp.items = result;
+            } else {
+                result.forEach(element => {
+                    filterCourseApp.items.push(element);
+                });
+            }
+
+            filterCourseApp.loading = false;
+            if (result.length === 0) {
+                filterCourseApp.showLoadMore = false;
+            } else {
+                filterCourseApp.showLoadMore = true;
+            }
+        });
+}
+
+Vue.component('data-filter', {
+    props: ['title', 'items', 'wid', 'chosen'],
+    data: function () {
+        return {
+            collapse: false,
+            term: '',
+            init: true
+        }
+    },
+    methods: {
+        getItems: function () {
+            if(this.chosen && this.items.length > 0 && this.init) {
+                this.items.forEach(element => {
+                    if(element.id['$id'] === this.chosen) {
+                        element.selected = true;
+                    }
+                });
+                
+                this.init = false;
+            }
+            
+            return this.items.filter(x => x.title.includes(this.term));
+        },
+        search: function() {
+            var toCheck = $("#filterCourseDepId");
+            if(toCheck && toCheck.length > 0) {
+                getCources();                
+                return;
+            }
+
+            getCources2();
+        }
+    },
+    template: `
+        <div class="filter-data" v-bind:class="{collapsed: collapse}">
+            <div v-on:click="collapse = !collapse" class="header">
+                <span class="flaticon-settings-3"></span>
+                <span>{{title}}</span>
+                <span v-if="!collapse" class="flaticon-down-arrow"></span>
+                <span v-if="collapse" class="flaticon-up-arrow"></span>
+            </div>
+            <div class="search">
+                <span class="flaticon-search"></span>
+                <input v-model="term" placeholder="جست و جو" />
+            </div>
+            <div class="items">
+                <label v-for="item in getItems()">
+                    <input v-bind:data-change-filter="wid" v-model="item.selected" v-on:change="search" type="checkbox" />
+                    {{item.title}}
+                </label>
+            </div>
+        </div>
+    `
+});
+
+Vue.component('data-filter-academy', {
+    props: ['title', 'items', 'wid'],
+    data: function () {
+        return {
+            collapse: false,
+            term: ''
+        }
+    },
+    methods: {
+        getItems: function () {
+            if(!this.items) {
+                return;
+            }
+            return this.items.filter(x => x.title.includes(this.term));
+        },
+        search: function() {
+            getCources();
+        }
+    },
+    template: `
+        <div class="filter-data" v-bind:class="{collapsed: collapse}">
+            <div v-on:click="collapse = !collapse" class="header">
+                <span class="flaticon-settings-3"></span>
+                <span>{{title}}</span>
+                <span v-if="!collapse" class="flaticon-down-arrow"></span>
+                <span v-if="collapse" class="flaticon-up-arrow"></span>
+            </div>
+            <div class="search">
+                <span class="flaticon-search"></span>
+                <input v-model="term" placeholder="جست و جو" />
+            </div>
+            <div class="items">
+                <label v-for="item in getItems()">
+                    <input v-bind:data-change-filter-academy="wid" v-model="item.selected" v-on:change="search" type="checkbox" />
+                    {{item.title}}
+                </label>
+            </div>
+        </div>
+    `
+});
+
+var departmentsApp;
+var centersApp;
+var filterCourseApp;
+var filterCourseApp2;
+var profileApp;
+
+$(function () {
+    $('body').on('click', '.search-input', function () {
+        $('#searchInput').focus();
+    });
+
+    $('body').on('click', '.search-container', function (e) {
+        if ($(e.target).prop('class') === 'search-container') {
+            searchApp.blured();
+        }
+    });
+
+    $('body').on('click', '[data-tools]', function (e) {
+        var target = $(e.target);
+        if(target.parent().is("[data-tools-btn]") || target.is("[data-tools-btn]") || target.is('a') || target.parent().is('a')) {
+            return;
+        }
+
+        var self = $(this);
+        var wanted = self.find('.row-tools');
+
+        if(!wanted || wanted.length === 0) {
+            return;
+        }
+
+        if(wanted.hasClass('show')) {
+            wanted.removeClass('show');
+        }else {
+            wanted.addClass('show');
+        }
+    });
+
+    $('body').on('click', '[data-tools-btn]', function () {
+        var self = $(this);
+        var wanted = self.parent().parent().find('.row-tools');
+
+        if(!wanted || wanted.length === 0) {
+            return;
+        }
+
+        if(wanted.hasClass('show')) {
+            wanted.removeClass('show');
+        }else {
+            wanted.addClass('show');
+        }
+    });
+
+    $('[data-search-toggle]').click(function () {
+        searchApp.focused();
+    });
+
+    function getDepartments(term, args) {
+        if (!departmentsApp) {
+            return;
+        }
+
+        departmentsApp.loading = true;
+        departmentsApp.showLoadMore = false;
+
+        var data = {
+            term: term
+        };
+
+        var skip = 0;
+        if (args) {
+            data['skip'] = args.skip;
+            skip = args.skip;
+        }
+        var d = $("[data-department]").attr('data-department');
+        var g = $("[data-group].active").attr('data-group');
+        var a = $("[data-academy]").attr('data-academy');
+        var url = `${root}/ajax/default/calendar?need=searchdepartmentsgroup&department[]=${d}`;
+        if(g) {
+            url = `${root}/ajax/default/calendar?need=searchdepartmentsgroup&group[]=${g}`;
+        }
+        if(a) {
+            url += `&place[]=${a}`;
+        }
+        return $.post(url, data)
+            .done(function (result){
+            result = JSON.parse(result);
+    
+            if(skip === 0) {
+                departmentsApp.items = result;
+            } else {
+                result.forEach(element => {
+                    departmentsApp.items.push(element);
+                });
+            }        
+    
+            departmentsApp.loading = false;
+            if (result.length === 0) {
+                departmentsApp.showLoadMore = false;
+            } else {
+                departmentsApp.showLoadMore = true;
+            }
+        });
+    }
+
+    if ($("#departmentsFilter").length > 0) {
+        var filterRequest;
+        departmentsApp = new Vue({
+            el: '#departmentsFilter',
+            data: {
+                loading: false,
+                showLoadMore: true,
+                term: '',
+                items: []
+            },
+            methods: {
+                preload: function () {
+                    var appRef = this;
+
+                    var d = $("[data-department]").attr('data-department');
+                    var g = $("[data-group].active").attr('data-group');
+                    var a = $("[data-academy]").attr('data-academy');
+                    var url = `${root}/ajax/default/calendar?need=searchdepartmentsgroup&department[]=${d}`;
+                    if(g) {
+                        url = `${root}/ajax/default/calendar?need=searchdepartmentsgroup&group[]=${g}`;
+                    }
+                    if(a) {
+                        url += `&place[]=${a}`;
+                    }
+
+                    appRef.showLoadMore = false;
+
+                    $.post(url)
+                    .done(function (data) {
+                        appRef.items = JSON.parse(data);
+                        if(appRef.items.length > 0) {
+                            appRef.showLoadMore = true;
+                        }
+                    });
+                },
+                search: function (event) {
+                    if (filterRequest) {
+                        filterRequest.abort();
+                    }
+                    
+                    filterRequest = getDepartments(this.term);
+                },
+                loadMore: function (event) {
+                    var skip = this.items.length;
+                    getDepartments(this.term, {
+                        skip: skip
+                    });
+                }
+            },
+            created() {
+                this.preload();
+            }
+        });
+    }
+
+    if ($("#centersFilter").length > 0) {
+        centersApp = new Vue({
+            el: '#centersFilter',
+            data: {
+                loading: false,
+                showLoadMore: true,
+                term: '',
+                items: academies,
+                latestProvince
+            },
+            methods: {
+                search: function () {
+                    this.items = academies.filter(x => x.title.includes(this.term) || x.enTitle.includes(this.term));
+                },
+                set: function (newValue) {
+                    this.latestProvince = newValue;
+                    return provinces[this.latestProvince];
+                }
+            }
+        });
+    }
+
+    if ($("#academiesFilter").length > 0) {
+        centersApp = new Vue({
+            el: '#academiesFilter',
+            data: {
+                loading: false,
+                showLoadMore: true,
+                term: '',
+                provinces: provinces
+            },
+            methods: {
+                search: function () {
+                    provinces.forEach(province => {
+                        province.forEach(element => {
+                            element.show = false;
+                        });
+                        var wanted = province.filter(x => x.title.includes(this.term) || x.enTitle.includes(this.term));
+                        wanted.forEach(element => {
+                            element.show = true;
+                        });
+                    });
+                },
+                get: function (wanted) {
+                    return allProvinces.filter(x => x.id == wanted[0].province)[0].name;
+                },
+                check: function(province) {
+                    var flag = false;
+                    province.forEach(element => {
+                        if(element.show) {
+                            flag = true;
+                            return;
+                        }
+                    });
+
+                    return flag;
+                }
+            }
+        });
+    }
+
+    var filterRequestCourse;
+    if ($("#filterCourse").length > 0) {
+        filterCourseApp = new Vue({
+            el: "#filterCourse",
+            methods: {
+                search: function (event) {
+                    if (filterRequestCourse) {
+                        filterRequestCourse.abort();
+                    }
+
+                    filterRequestCourse = getCources();
+                },
+                preload: function() {
+                    var appRef = this;
+
+                    $.post(`${root}/ajax/default/calendar?need=department`)
+                        .done(function (data) {
+                            appRef.departmentsItems = JSON.parse(data);
+                        });
+
+                    $.post(`${root}/ajax/default/calendar?need=month`)
+                        .done(function (data) {
+                            appRef.monthItems = JSON.parse(data);
+                        });
+                },
+                loadGroups: function () {
+                    var appRef = this;
+
+                    var result = this.departmentsItems.filter(obj => {
+                        return obj.selected
+                    });
+
+                    var ids = [];
+                    result.forEach(item => {
+                        var id = item.id["$id"];
+                        ids.push(id);
+                    });
+
+                    if(filterGroupRequest) {
+                        filterGroupRequest.abort();
+                    }
+
+                    filterGroupRequest = $.post(`${root}/ajax/default/calendar?need=group`, { ids: ids }).done(function (data) {
+                        data = JSON.parse(data);
+                        appRef.groupItems = data;
+                    });
+                },
+                loadCourses: function() {
+                    var appRef = this;
+
+                    var result = this.groupItems.filter(obj => {
+                        return obj.selected
+                    });
+
+                    var ids = [];
+                    result.forEach(item => {
+                        var id = item.id["$id"];
+                        ids.push(id);
+                    });
+
+                    if(filterCourseRequest) {
+                        filterCourseRequest.abort();
+                    }
+
+                    filterCourseRequest = $.post(`${root}/ajax/default/calendar?need=course`, { ids: ids }).done(function (data) {
+                        data = JSON.parse(data);
+                        appRef.courseItems = data;
+                    });
+                },
+                loadMore: function (event) {
+                    var skip = this.items.length;
+                    getCources(this.term, {
+                        skip: skip
+                    });
+                }
+            },
+            created() {
+                this.preload();
+            },
+            data: {
+                loading: false,
+                showLoadMore: true,
+                term: '',
+                items: [],
+                departmentsItems: [],
+                groupItems: [],
+                courseItems: [],
+                monthItems: []
+            }
+        });
+
+        filterCourseApp.search();
+    }
+
+    if ($("#profileApp").length > 0) {
+        const account = {
+            template: '#account'
+        };
+        const conversations = {
+            template: '#conversations'
+        };
+        const courses = {
+            template: '#courses'
+        };
+
+        const routes = {
+            '': account,
+            'conversations': conversations,
+            'courses': courses
+        };
+
+        const titles = {
+            '': 'حساب کاربری',
+            'conversations': 'مدیریت پیام ها',
+            'courses': 'دوره های من'
+        };
+
+        
+        window.addEventListener('popstate', (e) => {
+            if (!e.state) {
+                profileApp.page = '';
+                return;
+            }
+
+            var page = e.state.ref;
+
+            profileApp.page = page;
+
+            profilePage = page;
+        });
+
+        profileApp = new Vue({
+            el: "#profileApp",
+            data: {
+                page: ''
+            },
+            created: function() {
+                window.history.pushState({ref : this.page}, titles[this.page], this.page);
+            },
+            methods: {
+                change: function (page) {
+                    if(this.page !== page) {
+                        window.history.pushState({ref : page}, titles[page], page);
+                    }
+                    this.page = page;
+                    return false;
+                }
+            },
+            computed: {
+                ViewComponent() {                    
+                    return routes[this.page];
+                }
+            },
+            render(h) {
+                return h(this.ViewComponent)
+            }
+        });
+    }
+
+    var filterRequestCourse2;
+    var filterGroupRequest;
+    var filterCourseRequest;
+    var preDataLoaded = 0;
+    if ($("#filterCourse2").length > 0) {
+        filterCourseApp2 = new Vue({
+            el: "#filterCourse2",
+            methods: {
+                search: function () {
+                    if (filterRequestCourse2) {
+                        filterRequestCourse2.abort();
+                    }
+
+                    filterRequestCourse2 = getCources2();
+                },
+                loadMore: function (event) {
+                    var pSkip = this.items.filter(function (item) { return item.package }).length;
+                    var skip = this.items.length - pSkip;
+                    getCources2(skip, pSkip);
+                },
+                showFiltersToggle: function (event) {
+                    this.showFilters = !this.showFilters;
+                },
+                preload: function() {
+                    var appRef = this;
+                    $.post(`${root}/ajax/default/calendar?need=place`)
+                        .done(function (data) {
+                            appRef.centerItems = JSON.parse(data);
+                            preDataLoaded++;
+                        });
+
+                    $.post(`${root}/ajax/default/calendar?need=department`)
+                        .done(function (data) {
+                            appRef.departmentsItems = JSON.parse(data);
+                            preDataLoaded++;
+                        });
+
+                    $.post(`${root}/ajax/default/calendar?need=month`)
+                        .done(function (data) {
+                            appRef.monthItems = JSON.parse(data);
+                            preDataLoaded++;
+                        });
+                },
+                loadGroups: function () {
+                    var appRef = this;
+
+                    var result = this.departmentsItems.filter(obj => {
+                        return obj.selected
+                    });
+
+                    var ids = [];
+                    result.forEach(item => {
+                        var id = item.id["$id"];
+                        ids.push(id);
+                    });
+
+                    if(filterGroupRequest) {
+                        filterGroupRequest.abort();
+                    }
+
+                    filterGroupRequest = $.post(`${root}/ajax/default/calendar?need=group`, { ids: ids }).done(function (data) {
+                        data = JSON.parse(data);
+                        appRef.groupItems = data;
+                    });
+                },
+                loadCourses: function() {
+                    var appRef = this;
+
+                    var result = this.groupItems.filter(obj => {
+                        return obj.selected
+                    });
+
+                    var ids = [];
+                    result.forEach(item => {
+                        var id = item.id["$id"];
+                        ids.push(id);
+                    });
+
+                    if(filterCourseRequest) {
+                        filterCourseRequest.abort();
+                    }
+
+                    filterCourseRequest = $.post(`${root}/ajax/default/calendar?need=course`, { ids: ids }).done(function (data) {
+                        data = JSON.parse(data);
+                        appRef.courseItems = data;
+                    });
+                },
+                packageClick: function(item) {
+                    document.location = `./package?id=${item.id['$id']}`;
+                }
+            },
+            created() {
+                this.preload();
+            },
+            data: {
+                init: false,
+                loading: true,
+                showLoadMore: false,
+                showFilters: window.innerWidth > 999,
+                term: $("#initTermValueForApp").length > 0 ? `${$("#initTermValueForApp").val()}` : '',
+                items: [],
+                calendarItemType: [{id: 'package', title:'فقط پکیج های ثبت نامی', selected: false}, {id: 'all', title: 'کلاس ها و پکیج های ثبت نامی', selected: true}],
+                centerItems: [],
+                departmentsItems: [],
+                groupItems: [],
+                courseItems: [],
+                monthItems: []
+            }
+        });
+
+        var preSearchInterval = setInterval(() => {
+            if (preDataLoaded >= 3) {
+                filterCourseApp2.search(true);
+                clearInterval(preSearchInterval)
+            }
+        }, 200);
+    }
+
+    $('body').on('change', '[data-change-filter="department"]', function(e){
+        filterCourseApp2.loadGroups();
+    });
+
+    $('body').on('change', '[data-change-filter="group"]', function(e){
+        filterCourseApp2.loadCourses();
+    });
+
+    $('body').on('change', '[data-change-filter-academy="department"]', function(e){
+        filterCourseApp.loadGroups();
+    });
+
+    $('body').on('change', '[data-change-filter-academy="group"]', function(e){
+        filterCourseApp.loadCourses();
+    });
+
+    if ($("#interestsApp").length > 0) {
+        interestsApp = new Vue({
+            el: "#interestsApp",
+            data: {
+                items: [],
+                term: ''
+            },
+            computed: {
+                filteredItems: function () {
+                    self = this;
+                    return this.items.filter(function (item) {
+                        return item.title.includes(self.term);
+                    });
+                },
+                selectedItems: function () {
+                    return this.items.filter(function (item) {
+                        return item.isSelected;
+                    });
+                }
+            },
+            methods: {
+                selectToggle: function (item) {
+                    item.isSelected = !item.isSelected;
+                }
+            }
+        });
+    }
+});

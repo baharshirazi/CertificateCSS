@@ -1,0 +1,939 @@
+(function (window, document) {
+    'use strict';
+
+    if (typeof window.CustomEvent !== 'function') {
+        window.CustomEvent = function (event, params) {
+
+            params = params || { bubbles: false, cancelable: false, detail: undefined };
+
+            var evt = document.createEvent('CustomEvent');
+            evt.initCustomEvent(event, params.bubbles, params.cancelable, params.detail);
+            return evt;
+        };
+
+        window.CustomEvent.prototype = window.Event.prototype;
+    }
+
+    document.addEventListener('touchstart', handleTouchStart, false);
+    document.addEventListener('touchmove', handleTouchMove, false);
+    document.addEventListener('touchend', handleTouchEnd, false);
+
+    var xDown = null;
+    var yDown = null;
+    var xDiff = null;
+    var yDiff = null;
+    var timeDown = null;
+    var startEl = null;
+
+    function handleTouchEnd(e) {
+        if (startEl !== e.target) return;
+
+        var swipeThreshold = parseInt(getNearestAttribute(startEl, 'data-swipe-threshold', '20'), 10); // default 20px
+        var swipeTimeout = parseInt(getNearestAttribute(startEl, 'data-swipe-timeout', '500'), 10);    // default 500ms
+        var timeDiff = Date.now() - timeDown;
+        var eventType = '';
+        var changedTouches = e.changedTouches || e.touches || [];
+
+        if (Math.abs(xDiff) > Math.abs(yDiff)) { // most significant
+            if (Math.abs(xDiff) > swipeThreshold && timeDiff < swipeTimeout) {
+                if (xDiff > 0) {
+                    eventType = 'swiped-left';
+                }
+                else {
+                    eventType = 'swiped-right';
+                }
+            }
+        }
+        else if (Math.abs(yDiff) > swipeThreshold && timeDiff < swipeTimeout) {
+            if (yDiff > 0) {
+                eventType = 'swiped-up';
+            }
+            else {
+                eventType = 'swiped-down';
+            }
+        }
+
+        if (eventType !== '') {
+            var eventData = {
+                dir: eventType.replace(/swiped-/, ''),
+                touchType: (changedTouches[0] || {}).touchType || 'direct',
+                xStart: parseInt(xDown, 10),
+                xEnd: parseInt((changedTouches[0] || {}).clientX || -1, 10),
+                yStart: parseInt(yDown, 10),
+                yEnd: parseInt((changedTouches[0] || {}).clientY || -1, 10)
+            };
+
+            startEl.dispatchEvent(new CustomEvent('swiped', { bubbles: true, cancelable: true, detail: eventData }));
+
+            startEl.dispatchEvent(new CustomEvent(eventType, { bubbles: true, cancelable: true, detail: eventData }));
+        }
+
+        xDown = null;
+        yDown = null;
+        timeDown = null;
+    }
+
+    function handleTouchStart(e) {
+        if (e.target.getAttribute('data-swipe-ignore') === 'true') return;
+
+        startEl = e.target;
+
+        timeDown = Date.now();
+        xDown = e.touches[0].clientX;
+        yDown = e.touches[0].clientY;
+        xDiff = 0;
+        yDiff = 0;
+    }
+
+    function handleTouchMove(e) {
+        if (!xDown || !yDown) return;
+
+        var xUp = e.touches[0].clientX;
+        var yUp = e.touches[0].clientY;
+
+        xDiff = xDown - xUp;
+        yDiff = yDown - yUp;
+    }
+
+    function getNearestAttribute(el, attributeName, defaultValue) {
+        while (el && el !== document.documentElement) {
+            var attributeValue = el.getAttribute(attributeName);
+            if (attributeValue) {
+                return attributeValue;
+            }
+            el = el.parentNode;
+        }
+
+        return defaultValue;
+    }
+
+}(window, document));
+
+var domainRoot;
+
+var notifyUser = function (message, type) {
+    switch (type) {
+
+        default:
+            alert(message);
+            break;
+    }
+};
+
+var searchResultHeightResolver = function () {
+    var elem = $("#searchInputParent");
+    if (!elem || elem.length === 0) {
+        return;
+    }
+    var top = elem.offset().top + 250;
+    var windowHeight = $(window).height();
+
+    var height = `${windowHeight - top}px`;
+
+    $(".search-result-container").css('max-height', height);
+
+    return height;
+};
+
+function removeURLParameter(url, parameter) {
+    var urlparts = url.split('?');
+    if (urlparts.length >= 2) {
+
+        var prefix = encodeURIComponent(parameter) + '=';
+        var pars = urlparts[1].split(/[&;]/g);
+
+        for (var i = pars.length; i-- > 0;) {
+            if (pars[i].lastIndexOf(prefix, 0) !== -1) {
+                pars.splice(i, 1);
+            }
+        }
+
+        url = urlparts[0] + '?' + pars.join('&');
+        return url;
+    } else {
+        return url;
+    }
+}
+
+function replaceAll(str, find, replace) {
+    return str.replace(new RegExp(find, 'g'), replace);
+}
+
+function safeUrl(url) {
+    return replaceAll(url, ' ', '-');
+}
+
+$(function () {
+    var sliderHeight = 0;
+    var sliderWidth = 0;
+    var sliderHeightResolver = function () {
+        var slides = $('[data-slider]').find('.slide');
+        if (!slides || slides.length === 0) {
+            return;
+        }
+
+        var firstSlide = $(slides[0]);
+
+        if (sliderHeight === 0) {
+            var bgImg = $('<img />');
+            bgImg.hide();
+            bgImg.bind('load', function () {
+                var self = $(this);
+                sliderHeight = self.height();
+                sliderWidth = self.width();
+                var height = (firstSlide.width() * sliderHeight) / sliderWidth;
+
+                $(".slider-container .slides .slide").css('height', `${height}px`);
+                self.remove();
+            });
+
+            var imageSource = firstSlide.attr('data-bg');
+            $('body').append(bgImg);
+            bgImg.attr('src', imageSource);
+        } else {
+            var height = (firstSlide.width() * sliderHeight) / sliderWidth;
+            $(".slider-container .slides .slide").css('height', `${height}px`);
+        }
+    };
+    function initSlider() {
+        var slides = $('[data-slider]').find('.slide');
+
+        var btnsHolder = $('[data-slider]').find('.slides-btns');
+
+        btnsHolder.html('');
+
+        sliderHeightResolver();
+
+        var activeIndex = -1;
+        $.each(slides, function (index, item) {
+            var elem = $(item);
+
+            var bg = elem.attr('data-bg');
+
+            if (bg) {
+                elem.css('background-image', `url("${bg}")`);
+            }
+
+            elem.prop('data-id', index);
+
+            var btn = document.createElement('button');
+            $(btn).attr('data-change-slide', index);
+
+            btnsHolder.append(btn);
+
+            if (elem.hasClass('active')) {
+                activeIndex = index;
+            }
+        });
+
+        var activeBtn = $(btnsHolder).find('[data-change-slide]')[activeIndex];
+        if (activeBtn) {
+            $(activeBtn).addClass('active');
+        }
+
+        function changeSlide(index) {
+            $('[data-change-slide]').removeClass('active');
+            $($('[data-change-slide]')[index]).addClass('active');
+
+            $('[data-slider] .slide').removeClass('active');
+            var elem = $('[data-slider] .slide')[index];
+            $(elem).addClass('active');
+        }
+
+        $('[data-change-slide]').click(function () {
+            var sender = $(this);
+
+            var index = sender.attr('data-change-slide');
+
+            changeSlide(index);
+
+            changeIndex = index;
+        });
+
+        var changeIndex = 0;
+        var changeIndexCap = $('[data-slider] .slide').length;
+        var mouseIsOver = false;
+        $(".slider-container").mouseover(function () {
+            mouseIsOver = true;
+        }).mouseout(function () {
+            mouseIsOver = false;
+        });
+
+        setInterval(() => {
+            if (mouseIsOver) {
+                return;
+            }
+
+            changeSlide(changeIndex);
+
+            changeIndex++;
+            if (changeIndex == changeIndexCap) {
+                changeIndex = 0;
+            }
+        }, 6000);
+
+        $('a.slide[data-bg]').on(
+            {
+                'swiped-left': function (e) {
+                    var sender = $(e.target);
+                    var number = parseInt(sender.prop('data-id'));
+
+                    changeIndex = number - 1;
+                    if (changeIndex < 0) {
+                        changeIndex = 0;
+                        return;
+                    }
+
+                    changeSlide(changeIndex);
+                }
+            }
+        );
+
+        $('a.slide[data-bg]').on(
+            {
+                'swiped-right': function (e) {
+                    var sender = $(e.target);
+                    var number = parseInt(sender.prop('data-id'));
+
+                    changeIndex = number + 1;
+                    if (changeIndex >= changeIndexCap) {
+                        changeIndex = changeIndexCap;
+                        return;
+                    }
+
+                    changeSlide(changeIndex);
+                }
+            }
+        );
+    }
+
+    initSlider();
+
+    $('body').on('click', '[data-tab]', function (e) {
+        e.preventDefault();
+
+        $('.tab').removeClass('show');
+
+        var sender = $(this);
+
+        var wanted = sender.attr('data-tab');
+
+        $(wanted).addClass('show');
+
+        $('[data-tab]').removeClass('active');
+        sender.addClass('active');
+    });
+
+    $('.filter-input').click(function () {
+        var parent = $(this);
+        parent.find('input').focus();
+    });
+
+    $('[data-filter-input]').focus(function () {
+        $(this).parent('.filter-input').addClass('focused');
+    });
+
+    $('[data-filter-input]').blur(function () {
+        $(this).parent('.filter-input').removeClass('focused');
+    });
+
+    $("[data-mobile-account]").click(function (e) {
+        e.preventDefault();
+        $("#accountToolsMobile").addClass('show');
+    })
+
+    $("[data-mobile-account-close]").click(function (e) {
+        e.preventDefault();
+        $("#accountToolsMobile").removeClass('show');
+    })
+
+    $("[data-account]").click(function (e) {
+        e.preventDefault();
+
+        var wanted = $("#accountTools");
+
+        if (wanted.length === 0) {
+            window.location = "/student/login";
+            return;
+        }
+
+        if (!wanted.hasClass('show')) {
+            var w = $("#usernameHolder").outerWidth();
+            wanted.css('left', `${w + 16}px`);
+        }
+
+        wanted.toggleClass('show');
+    });
+
+    $('body').click(function (e) {
+        var sender = $(e.target);
+        if (sender.is("[data-account]") === false
+            && sender.parents("[data-account]").length === 0
+            && sender.is("#accountTools") == false
+            && sender.parents("#accountTools").length === 0) {
+            $("#accountTools").removeClass('show');
+        }
+    });
+
+    var updateUi = function () {
+        var conversations = $("#conversationsNotify");
+        if (conversations.length > 0) {
+            $.post("/student/conversationscount").done(function (data) {
+                if (data != 0) {
+                    conversations.removeClass("hidden");
+                } else {
+                    conversations.addClass("hidden");
+                }
+                conversations.text(data);
+            })
+        }
+    };
+
+    // setInterval(updateUi, 10000);
+
+    $("[data-open-modal]").click(function () {
+        $(document.body).addClass('open-modal');
+
+        var sender = $(this);
+
+        var wanted = sender.attr('data-open-modal');
+
+        $(wanted).addClass('show');
+    });
+
+    $("[data-close-modal]").click(function () {
+        var sender = $(this);
+
+        sender.parents("[data-modal]").removeClass('show');
+
+        $(document.body).removeClass("open-modal");
+    });
+
+    $('a.disabled').click(function (e) {
+        e.preventDefault();
+    })
+
+    $("a.disabled").on("contextmenu", function () {
+        return false;
+    });
+
+    $("body").on("click", "[data-replay-to]", function (e) {
+        e.preventDefault();
+
+        var sender = $(this);
+
+        sender = $(sender.parents("[data-id]")[0]);
+
+        if (sender.hasClass('selected')) {
+            sender.removeClass('selected');
+        } else {
+            $(".conversation-message").removeClass('selected');
+            sender.addClass('selected');
+        }
+
+        var form = $(".conversation-new-message");
+        var elem = form.find('#replayto');
+        if (elem != null && elem.length > 0) {
+            $(elem).remove();
+        }
+        var elem2 = form.find('.conversation-message');
+        if (elem2 != null && elem2.length > 0) {
+            $(elem2).remove();
+        }
+
+        var wanted = $(".conversation-message.selected");
+        if (wanted == null || wanted.length === 0) {
+            return;
+        }
+
+        form.append(`<input id="replayto" name="replayto" type="hidden" value="${sender.attr('data-id')}" />`);
+        var html = `<div class="conversation-message">${wanted.html()}</div>`;
+        form.prepend(html);
+    });
+
+    $("[data-remove-message]").click(function (e) {
+        e.preventDefault();
+
+        if (!confirm('از حذف پیام مطمئن هستید؟')) {
+            return;
+        }
+
+        var id = $(this).attr('data-remove-message');
+
+        $.post('./removeconversation', { id: id })
+            .done(function () {
+                location.reload();
+            })
+            .fail(function () {
+                alert('خطا در ثبت درخواست.');
+            });
+    });
+
+    $('#watchVideo').bind('contextmenu', function () { return false; });
+
+    function openVideoPlayback(data) {
+        $("#watchVideoSourse").prop('src', data.source);
+        if (data.poster != null && data.poster.length > 0) {
+            $("#watchVideo").prop('poster', data.poster);
+        }
+
+        $("#watchTitle").text(data.title);
+        $("#watchDescription").text(data.description);
+
+        var player = $("#watchVideo")[0];
+
+        player.load();
+
+        $(".playback-content-video").fadeIn(100);
+    }
+
+    $("[data-show-content]").click(function (e) {
+        e.preventDefault();
+        var sender = $(this);
+
+        sender.addClass('loading');
+
+        var id = sender.attr('data-show-content');
+
+        $.post('./getcontentinfo', { id: id })
+            .done(function (data) {
+                if (data == null || data.length == 0) {
+                    sender.addClass('error');
+                    return;
+                }
+
+                data = JSON.parse(data);
+
+                if (sender.attr('data-show-content-type') === "video") {
+                    openVideoPlayback(data);
+                } else {
+                    window.open(data['source']);
+                }
+            })
+            .fail(function () {
+                sender.addClass('error');
+            })
+            .always(function () {
+                sender.removeClass('loading')
+            });
+    });
+
+    var closeWatchOverlay = function () {
+        $("#watchVideo")[0].pause();
+        $(".playback-content-video").fadeOut(100);
+    };
+
+    $("[data-close-playback]").click(function () {
+        closeWatchOverlay();
+    });
+
+    var root = $("#root").val();
+    domainRoot = root;
+
+    $("body").on("click", "[data-class-register]", function () {
+
+        $(".class-register-popup").remove();
+
+        var sender = $(this);
+
+        var id = sender.attr('data-class-register');
+
+        var position = sender.offset();
+
+        var y = position.top;
+        var x = position.left;
+        var cname = sender.find('[data-class-name').text();
+        var cnameUrl = sender.find('[data-class-name-url]').val();
+        var lessonId = sender.attr('data-lesson-id');
+        var cid = sender.attr('data-class-number');
+        var platform = sender.find('[data-class-platform]').text();
+        var start = sender.attr('data-class-start');
+        var end = sender.attr('data-class-end');
+        var place = sender.find('[data-class-place]').text();
+        var h = sender.attr('data-class-time');
+        var daysSource = sender.find('[data-class-day');
+        var days = "";
+        $.each(daysSource, function (index, value) {
+            days = `${days}<div>${$(value).val()}</div>`;
+        });
+        var cost = sender.find('.cost').html();
+        var url = `${root}/student/info?id=${id}`;
+        var detailsUrl = `${root}/lesson/${lessonId}/${cnameUrl}?refp=${safeUrl(place.trim())}`;
+        var btn = `<a href="${url}" target="_blank" class="reg-btn filled">ثبت نام</a>`;
+        var detailsBtn = `<a href="${detailsUrl}" target="_blank" class="shallow-btn">جزئیات دوره</a>`;
+
+        var html = `<div class="class-register-popup" class-register-ref="${id}" style="left: ${x}px; top: ${y + 80}px">
+            <div class="class-register-popup-name">${cname}</div>
+            <div class="class-register-popup-header">
+                <div dir="ltr" style="text-align:right">
+                    <em style="font-style: normal">${cid}</em>
+                    <span class="flaticon-hashtag"></span>                    
+                </div>
+                <div>
+                    <span class="flaticon-video-camera"></span>
+                    ${platform}
+                </div>
+                <div>
+                    <span class="flaticon-calendar"></span>
+                    ${start}
+                </div>
+                <div>
+                    <span class="flaticon-pin"></span>
+                    ${place}
+                </div>
+                <div dir="ltr" style="text-align:right">
+                    <em dir="rtl" style="font-style: normal">${h}</em>
+                    <span class="flaticon-clock"></span>                    
+                </div>
+            </div>
+            <div class="class-register-popup-body">
+                ${days}
+            </div>
+            <div class="class-register-popup-footer">
+                <div class="price">
+                    ${cost}
+                </div>
+                <div>
+                    ${detailsBtn}
+                    ${btn}
+                </div>
+            </div>
+        </div>`;
+
+        $("body").append(html);
+
+        var elem = $(`[class-register-ref="${id}"]`);
+        var w = elem.width();
+
+        var ws = $(window).width();
+        if (ws / 2 > x) {
+            elem.addClass('l');
+            elem.css('left', `${x + sender.width()}px`);
+        } else {
+            elem.addClass('r');
+            elem.css('left', `${x - w}px`);
+        }
+    });
+
+    var subCleaner2;
+    $("[data-sub-tigger]").hover(function () {
+        if (subCleaner2) {
+            clearTimeout(subCleaner2);
+        }
+        var sender = $(this);
+        var wanted = sender.attr('data-sub-tigger');
+        var sub = $(`[data-sub="${wanted}"]`);
+
+        var pos = sender.offset();
+        sub.css('top', `${pos.top + 41}px`);
+
+        sub.addClass('show');
+    }, function () {
+        var sender = $(this);
+        var wanted = sender.attr('data-sub-tigger');
+
+        subCleaner2 = setTimeout(() => {
+            if ($(`[data-sub="${wanted}"]:hover`).length !== 0) {
+                return;
+            }
+
+            var sub = $(`[data-sub="${wanted}"]`);
+            sub.removeClass('show');
+        }, 400);
+    });
+
+    var subCleaner;
+    $(".sub").hover(function () {
+        if (subCleaner) {
+            clearTimeout(subCleaner);
+        }
+    }, function () {
+        subCleaner = setTimeout(() => {
+            $(this).removeClass('show');
+        }, 400);
+    });
+
+    $("[data-accordion").click(function () {
+        $(this).parent().toggleClass('show-accordion');
+    });
+
+    var messagesSync = function () {
+        var records = $(".conversation-message[data-id]");
+        if (!records || records.length === 0) {
+            return;
+        }
+
+        var ids = [];
+        $.each(records, function (index, item) {
+            var id = $(item).attr('data-id');
+            ids.push(id);
+        });
+
+        $.post(`./seen`, { ids: ids });
+    };
+
+    $("#filterMyLessons").click(function () {
+        $("#filterMyLessonsContainer").toggleClass('show');
+    });
+
+    $("[data-score-input]").on('input', function () {
+        var sender = $(this);
+        var elem = sender.next("span");
+        var value = sender.val();
+        elem.text(value == -1 ? "بدون امتیاز" : value);
+    });
+
+    messagesSync();
+
+    $(window).on('resize', function () {
+        sliderHeightResolver();
+        classRegisterWindowChange();
+        searchResultHeightResolver();
+    });
+
+    var classRegisterWindowChange = function () {
+        $(".class-register-popup").remove();
+    };
+
+    $("body").on('click', function (e) {
+        var sender = $(e.target);
+        if (sender.prop('cancel-close-register-class-popup')
+            || sender.prop('data-class-register')
+            || sender.parents('[data-class-register]').length > 0) {
+            return;
+        }
+        $(".class-register-popup").remove();
+    });
+
+    document.addEventListener('scroll', function (event) {
+        classRegisterWindowChange();
+    }, true);
+
+    $('.phone-format').mask('(999)99999999');
+    const mobileFormats = $('.mobile-format');
+    $.each(mobileFormats, function(index, mobileFormat) {
+        var value = $(mobileFormat).val();
+        if(value.length == 0) {
+            return;
+        }
+
+        if(value[0] == '0') {
+            $(mobileFormat).mask('0999-999-9999');
+        } else {
+            $(mobileFormat).mask('999-999-9999');
+        }
+    });
+    $('.date-format').mask('1999/99/99');
+    $('.clock-format').mask('24:60');
+    $('.creditcard-format').mask('9999-9999-9999-9999');
+
+    $("[data-filter-department-group]").click(function (e) {
+        e.preventDefault();
+
+        var currentUrl = document.location.href;
+
+        var seperator = "?";
+        if (currentUrl.indexOf("?") > 0) {
+            seperator = "&";
+        }
+
+        currentUrl = removeURLParameter(currentUrl, "group");
+
+        var group = $(this).attr('data-group');
+
+        document.location = `${currentUrl}${seperator}group=${group}#calendar`;
+    });
+
+    $('[data-copy-form]').click(function (e) {
+        e.preventDefault();
+
+        var self = $(this);
+        var source = $(self.attr('data-copy-form'));
+        var wanted = $(self.attr('data-copy-form-to'));
+
+        var index = parseInt(self.attr('data-copy-form-index'), 10);
+        var newIndex = index + 1;
+        self.attr('data-copy-form-index', newIndex);
+
+        var html = source[0].outerHTML;
+        html = html.replace(`data-copy-form-index="${newIndex}"`, `data-copy-form-index="${newIndex}"`);
+        html = html.split(`[0]`).join(`[${index + 1}]`);
+
+        wanted.append(html);
+    });
+
+    $("[data-input-upload]").click(function (e) {
+        e.preventDefault();
+
+        var self = $(this);
+
+        var inputSelector = self.attr('data-input-upload');
+
+        $(inputSelector).click();
+    });
+
+    $("#partneringForm").submit(function (e) {
+        e.preventDefault();
+
+        var self = $(this);
+
+        var formData = new FormData(self[0]);
+
+        var requestOptions = {
+            method: 'POST',
+            body: formData
+        };
+
+        var loading = function () {
+
+        };
+
+        var unloading = function () {
+
+        };
+
+        loading();
+
+        fetch(`./partnering`, requestOptions)
+            .then(async response => {
+                var result = await response.json();
+
+                unloading();
+
+                if (result.status == 200) {
+                    notifyUser('اطلاعات شما با موفقیت ارسال شد.');
+                }
+            })
+            .catch(error => {
+                console.log(error);
+                notifyUser('خطا در ارتباط با سرور');
+                unloading();
+            });
+    });
+
+    $("[data-main-menu]").hover(function () {
+        var sender = $(this);
+        var top = sender.position().top + sender.outerHeight(true) + 14;
+        sender.find(".sub").css('display', 'block').css('top', `${top}px`);
+        sender.children("a").addClass("active");
+    }, function () {
+        setTimeout(_ => {
+            sender = $(this);
+            if (sender.is(":hover") !== true) {
+                sender.find(".sub").removeAttr('style');
+                sender.children("a").removeClass("active");
+            }
+        }, 250)
+    });
+
+    $("[data-main-menu-sub]").hover(function () {
+        var sender = $(this);
+        var top = sender.position().top + sender.outerHeight(true) - 2;
+        sender.find(".sub2").css('display', 'block').css('top', `${top}px`).css('right', '55%');
+        sender.children("a").addClass("active").css('border-radius', '8px 8px 8px 0').css('background', '#b4dff3');
+    }, function () {
+        setTimeout(_ => {
+            sender = $(this);
+            if (sender.is(":hover") !== true) {
+                sender.find(".sub2").removeAttr('style');
+                sender.children("a").removeClass("active").removeAttr('style');
+            }
+        }, 250)
+    });
+
+
+    var initInViewAnimation = function (holder, selector) {
+        inView(holder)
+            .on('enter',
+                function () {
+                    var elems = $(selector);
+                    var index = 0;
+                    for (const elem in elems) {
+                        setTimeout(() => {
+                            if (Object.hasOwnProperty.call(elems, elem)) {
+                                const element = elems[elem];
+                                $(element).addClass('show');
+                            }
+                        }, 150 * index);
+                        index++;
+                    }
+                }
+            );
+    };
+
+    initInViewAnimation('.promos-holder', '.promo');
+
+    var initInViewAnimationForSameSelector = function (selector, delay, animationDuration) {
+        var counter = 1;
+        inView(selector)
+            .on('enter',
+                function (elem) {
+                    setTimeout(() => {
+                        $(elem).addClass('show');
+                        setTimeout(() => {
+                            counter--;
+                        }, animationDuration);
+                    }, delay * counter++);
+                });
+    }
+
+    initInViewAnimationForSameSelector('.department', 150, 100);
+
+    if ($('[data-role="conversation-messages-counter"]').length > 0) {
+        const sender = $('[data-role="conversation-messages-counter"]');
+        const classId = sender.val();
+        const conversationId = sender.attr('data-value');
+
+        const url = `/ajax/default/conversation?id=${conversationId}&cid=${classId}`;
+
+        const notifyNewMessagesElem = $("#conversationHasNewMessages");
+
+        setInterval(() => {
+            fetch(url)
+                .then(async response => {
+                    var result = await response.json();
+
+                    if (result <= $('.conversation-message').length) {
+                        return
+                    }
+
+                    notifyNewMessagesElem.addClass('show');
+                })
+        }, 6 * 1000);
+    }
+
+    $("#conversationHasNewMessages").click(function () {
+        location.reload();
+    });
+
+    // function urlContais(toCheck) {
+    //     if (window.location.href.toLocaleLowerCase().indexOf(toCheck.toLocaleLowerCase()) > -1) {
+    //         return true;
+    //     }
+    //     return false;
+    // }
+
+    // var headerInit = function () {
+    //     if (urlContais('/articles/') || urlContais('/news/')) {
+
+    //     }
+
+    //         var items = $(".content h2");
+
+    //     $.each(items, function (index, item) {
+    //         var wanted = $(item);
+
+    //         var originalText = wanted.text();
+
+    //         wanted.css("direction", "ltr").css("text-align", "right");
+    //         var elems = wanted.children();
+    //         wanted.text("");
+    //         wanted.html(originalText);
+    //         $.each(elems, function (index, elem) {
+    //             wanted.append(elem);
+    //         });
+    //     });
+    // };
+
+    // headerInit();
+});
